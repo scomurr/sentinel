@@ -1,0 +1,354 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "workflows_urlscan_io_incident_enrichment_name": {
+            "defaultValue": "urlscan.io-incident-enrichment",
+            "type": "String"
+        },
+        "connections_azuresentinel_urlscan_io_incident_enrichment_externalid": {
+            "defaultValue": "/subscriptions/{subscriptionId}/resourceGroups/sentinel-rg/providers/Microsoft.Web/connections/azuresentinel-urlscan.io-incident-enrichment",
+            "type": "String"
+        },
+        "connections_urlscan_io_custom_connector_demo_externalid": {
+            "defaultValue": "/subscriptions/{subscriptionId}/resourceGroups/sentinel-rg/providers/Microsoft.Web/connections/urlscan.io-custom-connector-demo",
+            "type": "String"
+        },
+        "customApis_urlscan_io_custom_connector_demo_externalid": {
+            "defaultValue": "/subscriptions/{subscriptionId}/resourceGroups/automationrg/providers/Microsoft.Web/customApis/urlscan.io-custom-connector-demo",
+            "type": "String"
+        }
+    },
+    "variables": {},
+    "resources": [
+        {
+            "type": "Microsoft.Logic/workflows",
+            "apiVersion": "2017-07-01",
+            "name": "[parameters('workflows_urlscan_io_incident_enrichment_name')]",
+            "location": "northcentralus",
+            "identity": {
+                "type": "SystemAssigned"
+            },
+            "properties": {
+                "state": "Enabled",
+                "definition": {
+                    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {
+                        "$connections": {
+                            "defaultValue": {},
+                            "type": "Object"
+                        }
+                    },
+                    "triggers": {
+                        "Microsoft_Sentinel_incident": {
+                            "type": "ApiConnectionWebhook",
+                            "inputs": {
+                                "body": {
+                                    "callback_url": "@{listCallbackUrl()}"
+                                },
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                    }
+                                },
+                                "path": "/incident-creation"
+                            }
+                        }
+                    },
+                    "actions": {
+                        "Add_comment_to_incident_(V3)_2": {
+                            "runAfter": {
+                                "Sentinel_Comments_-_If_Empty,_Call_Submit_and_then_Results_before_Appending_": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "ApiConnection",
+                            "inputs": {
+                                "body": {
+                                    "incidentArmId": "@triggerBody()?['object']?['id']",
+                                    "message": "<p>Results: @{variables('SentinelComment')}<br>\n</p>"
+                                },
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                    }
+                                },
+                                "method": "post",
+                                "path": "/Incidents/Comment"
+                            }
+                        },
+                        "Entities_-_Get_URLs": {
+                            "runAfter": {},
+                            "type": "ApiConnection",
+                            "inputs": {
+                                "body": "@triggerBody()?['object']?['properties']?['relatedEntities']",
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                    }
+                                },
+                                "method": "post",
+                                "path": "/entities/url"
+                            }
+                        },
+                        "Get_Search_API_Results_(loop)": {
+                            "foreach": "@body('Entities_-_Get_URLs')?['URLs']",
+                            "actions": {
+                                "If_Total_Results_from_Search_is_greater_than_0": {
+                                    "actions": {
+                                        "Append_Search_Results_to_Comment_String": {
+                                            "foreach": "@body('Search')?['results']",
+                                            "actions": {
+                                                "Append_Result_URL_from_Search": {
+                                                    "runAfter": {
+                                                        "Append_Screenshot_URL_from_Search": [
+                                                            "Succeeded"
+                                                        ]
+                                                    },
+                                                    "type": "AppendToStringVariable",
+                                                    "inputs": {
+                                                        "name": "SentinelComment",
+                                                        "value": "Result: @{items('Append_Search_Results_to_Comment_String')?['result']}"
+                                                    }
+                                                },
+                                                "Append_Screenshot_URL_from_Search": {
+                                                    "runAfter": {},
+                                                    "type": "AppendToStringVariable",
+                                                    "inputs": {
+                                                        "name": "SentinelComment",
+                                                        "value": "Screenshot: @{items('Append_Search_Results_to_Comment_String')?['screenshot']}, "
+                                                    }
+                                                }
+                                            },
+                                            "runAfter": {},
+                                            "type": "Foreach"
+                                        }
+                                    },
+                                    "runAfter": {
+                                        "Search": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "expression": {
+                                        "and": [
+                                            {
+                                                "greater": [
+                                                    "@body('Search')?['total']",
+                                                    0
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    "type": "If"
+                                },
+                                "Search": {
+                                    "runAfter": {},
+                                    "type": "ApiConnection",
+                                    "inputs": {
+                                        "host": {
+                                            "connection": {
+                                                "name": "@parameters('$connections')['urlscan.io-custom-connector-demo']['connectionId']"
+                                            }
+                                        },
+                                        "method": "get",
+                                        "path": "/api/v1/search",
+                                        "queries": {
+                                            "q": "domain:@{items('Get_Search_API_Results_(loop)')?['Url']}",
+                                            "size": "1"
+                                        }
+                                    }
+                                }
+                            },
+                            "runAfter": {
+                                "Initialize_Comment_String": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Foreach"
+                        },
+                        "Initialize_Comment_String": {
+                            "runAfter": {
+                                "Entities_-_Get_URLs": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "SentinelComment",
+                                        "type": "string"
+                                    }
+                                ]
+                            }
+                        },
+                        "Sentinel_Comments_-_If_Empty,_Call_Submit_and_then_Results_before_Appending_": {
+                            "actions": {
+                                "For_each": {
+                                    "foreach": "@body('Entities_-_Get_URLs')?['URLs']",
+                                    "actions": {
+                                        "Do_Until_Comment_String_is_not_Empty": {
+                                            "actions": {
+                                                "Delay": {
+                                                    "runAfter": {},
+                                                    "type": "Wait",
+                                                    "inputs": {
+                                                        "interval": {
+                                                            "count": 1,
+                                                            "unit": "Minute"
+                                                        }
+                                                    }
+                                                },
+                                                "Requests_returned_(non_emtpy_data_object)": {
+                                                    "actions": {
+                                                        "Append_DOM_URL_from_Result": {
+                                                            "runAfter": {
+                                                                "Append_Screenshot_URL_from_Result": [
+                                                                    "Succeeded"
+                                                                ]
+                                                            },
+                                                            "type": "AppendToStringVariable",
+                                                            "inputs": {
+                                                                "name": "SentinelComment",
+                                                                "value": "Dom URL: @{body('Scan_Results')?['task']?['domURL']}, "
+                                                            }
+                                                        },
+                                                        "Append_Report_URL_from_Result": {
+                                                            "runAfter": {
+                                                                "Append_DOM_URL_from_Result": [
+                                                                    "Succeeded"
+                                                                ]
+                                                            },
+                                                            "type": "AppendToStringVariable",
+                                                            "inputs": {
+                                                                "name": "SentinelComment",
+                                                                "value": "Report: @{body('Scan_Results')?['task']?['reportURL']}"
+                                                            }
+                                                        },
+                                                        "Append_Screenshot_URL_from_Result": {
+                                                            "runAfter": {},
+                                                            "type": "AppendToStringVariable",
+                                                            "inputs": {
+                                                                "name": "SentinelComment",
+                                                                "value": "Screenshot: @{body('Scan_Results')?['task']?['screenshotURL']}, "
+                                                            }
+                                                        }
+                                                    },
+                                                    "runAfter": {
+                                                        "Scan_Results": [
+                                                            "Succeeded"
+                                                        ]
+                                                    },
+                                                    "expression": {
+                                                        "and": [
+                                                            {
+                                                                "greater": [
+                                                                    "@length(body('Scan_Results')?['data']?['requests'])",
+                                                                    0
+                                                                ]
+                                                            }
+                                                        ]
+                                                    },
+                                                    "type": "If"
+                                                },
+                                                "Scan_Results": {
+                                                    "runAfter": {
+                                                        "Delay": [
+                                                            "Succeeded"
+                                                        ]
+                                                    },
+                                                    "type": "ApiConnection",
+                                                    "inputs": {
+                                                        "host": {
+                                                            "connection": {
+                                                                "name": "@parameters('$connections')['urlscan.io-custom-connector-demo']['connectionId']"
+                                                            }
+                                                        },
+                                                        "method": "get",
+                                                        "path": "/api/v1/result/@{encodeURIComponent(body('Submit_URL')?['uuid'])}"
+                                                    }
+                                                }
+                                            },
+                                            "runAfter": {
+                                                "Submit_URL": [
+                                                    "Succeeded"
+                                                ]
+                                            },
+                                            "expression": "@not(equals(variables('SentinelComment'), ''))",
+                                            "limit": {
+                                                "count": 4,
+                                                "timeout": "PT1H"
+                                            },
+                                            "type": "Until"
+                                        },
+                                        "Submit_URL": {
+                                            "runAfter": {},
+                                            "type": "ApiConnection",
+                                            "inputs": {
+                                                "body": {
+                                                    "url": "@items('For_each')?['Url']",
+                                                    "visibility": "public"
+                                                },
+                                                "headers": {
+                                                    "Content-Type": "application/json"
+                                                },
+                                                "host": {
+                                                    "connection": {
+                                                        "name": "@parameters('$connections')['urlscan.io-custom-connector-demo']['connectionId']"
+                                                    }
+                                                },
+                                                "method": "post",
+                                                "path": "/api/v1/scan"
+                                            }
+                                        }
+                                    },
+                                    "runAfter": {},
+                                    "type": "Foreach"
+                                }
+                            },
+                            "runAfter": {
+                                "Get_Search_API_Results_(loop)": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "expression": {
+                                "and": [
+                                    {
+                                        "equals": [
+                                            "@variables('SentinelComment')",
+                                            ""
+                                        ]
+                                    }
+                                ]
+                            },
+                            "type": "If"
+                        }
+                    },
+                    "outputs": {}
+                },
+                "parameters": {
+                    "$connections": {
+                        "value": {
+                            "azuresentinel": {
+                                "connectionId": "[parameters('connections_azuresentinel_urlscan_io_incident_enrichment_externalid')]",
+                                "connectionName": "[concat('azuresentinel-', parameters('workflows_urlscan_io_incident_enrichment_name'))]",
+                                "connectionProperties": {
+                                    "authentication": {
+                                        "type": "ManagedServiceIdentity"
+                                    }
+                                },
+                                "id": "/subscriptions/{subscriptionId}/providers/Microsoft.Web/locations/northcentralus/managedApis/azuresentinel"
+                            },
+                            "urlscan.io-custom-connector-demo": {
+                                "connectionId": "[parameters('connections_urlscan_io_custom_connector_demo_externalid')]",
+                                "connectionName": "urlscan.io-custom-connector-demo",
+                                "id": "[parameters('customApis_urlscan_io_custom_connector_demo_externalid')]"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    ]
+}
