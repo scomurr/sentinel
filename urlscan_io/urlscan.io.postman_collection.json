@@ -1,0 +1,126 @@
+{
+	"info": {
+		"_postman_id": "5d122367-43d6-464b-91c6-30e012d3e64a",
+		"name": "urlscan.io",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Submit URL",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"url\": \"https://www.microsoft.com\",\n    \"visibility\": \"public\",\n    \"tags\": [\"sjmtest\"]\n}"
+				},
+				"url": {
+					"raw": "https://urlscan.io/api/v1/scan",
+					"protocol": "https",
+					"host": [
+						"urlscan",
+						"io"
+					],
+					"path": [
+						"api",
+						"v1",
+						"scan"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Search",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "urlscan.io/api/v1/search?q=domain:microsoft.com&size=1",
+					"host": [
+						"urlscan",
+						"io"
+					],
+					"path": [
+						"api",
+						"v1",
+						"search"
+					],
+					"query": [
+						{
+							"key": "q",
+							"value": "domain:microsoft.com"
+						},
+						{
+							"key": "size",
+							"value": "1"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Scan Results",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "urlscan.io/api/v1/result/{uuid}",
+					"host": [
+						"urlscan",
+						"io"
+					],
+					"path": [
+						"api",
+						"v1",
+						"result",
+						"{uuid}"
+					]
+				}
+			},
+			"response": []
+		}
+	],
+	"auth": {
+		"type": "apikey",
+		"apikey": [
+			{
+				"key": "value",
+				"value": "your-key-value-here",
+				"type": "string"
+			},
+			{
+				"key": "key",
+				"value": "API-Key",
+				"type": "string"
+			}
+		]
+	},
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	]
+}
