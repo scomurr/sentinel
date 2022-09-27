@@ -1,3 +1,3 @@
-# sentinel
+# Sentinel
 
 Microsoft Sentinel Content
